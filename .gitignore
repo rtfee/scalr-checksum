@@ -1,6 +1,7 @@
 # Signature validation files
-scripts/private_key.pem
-scripts/checksum_config.json
+private_key.pem
+public_key.pem
+checksum_config.json
 *.tmp
 *.log
 .DS_Store

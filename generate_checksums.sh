@@ -9,6 +9,7 @@ WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUTFILE="${WORKSPACE_ROOT}/checksums.json"
 SIGFILE="${OUTFILE}.sig"
 PRIVATE_KEY="${SCRIPT_DIR}/private_key.pem"
+PRIVATE_KEY_ENV=""
 CONFIG_FILE="${SCRIPT_DIR}/checksum_config.json"
 VERBOSE=false
 INCLUDE_TERRAFORM=true
@@ -34,8 +35,9 @@ OPTIONS:
     -c, --config FILE       Use custom configuration file
     -o, --output FILE       Custom output file (default: checksums.json)
     -k, --key FILE          Custom private key file
+    --key-env VAR           Read private key from environment variable
     --no-terraform          Skip Terraform files (.tf)
-    --no-python            Skip Python files (.py)  
+    --no-python            Skip Python files (.py)
     --no-config            Skip configuration files
     --no-scripts           Skip shell scripts (.sh)
     --no-docs              Skip documentation files
@@ -48,6 +50,11 @@ EXAMPLES:
     $0 --include "*.md" --exclude "test*" # Include markdown, exclude test files
     $0 --no-docs --no-scripts            # Only include code files
     $0 --config custom_config.json       # Use custom configuration
+    $0 --key-env PRIVATE_KEY             # Read private key from environment variable
+
+ENVIRONMENT VARIABLES:
+    SCALR_PRIVATE_KEY                     # Private key content (alternative to file)
+    PRIVATE_KEY                           # Private key content (alternative to file)
 
 CONFIGURATION FILE:
     Create ${CONFIG_FILE} to set default options:
@@ -85,6 +92,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -k|--key)
             PRIVATE_KEY="$2"
+            shift 2
+            ;;
+        --key-env)
+            PRIVATE_KEY_ENV="$2"
             shift 2
             ;;
         --no-terraform)
@@ -127,21 +138,21 @@ done
 if [[ -f "${CONFIG_FILE}" ]]; then
     if command -v jq &> /dev/null; then
         echo "📝 Loading configuration from ${CONFIG_FILE}"
-        
+
         # Override defaults with config file values
         INCLUDE_TERRAFORM=$(jq -r '.include_terraform // true' "${CONFIG_FILE}")
         INCLUDE_PYTHON=$(jq -r '.include_python // true' "${CONFIG_FILE}")
         INCLUDE_CONFIG=$(jq -r '.include_config // true' "${CONFIG_FILE}")
         INCLUDE_SCRIPTS=$(jq -r '.include_scripts // true' "${CONFIG_FILE}")
         INCLUDE_DOCS=$(jq -r '.include_docs // true' "${CONFIG_FILE}")
-        
+
         # Load patterns from config
         if jq -e '.include_patterns' "${CONFIG_FILE}" &> /dev/null; then
             while IFS= read -r pattern; do
                 INCLUDE_PATTERNS+=("$pattern")
             done < <(jq -r '.include_patterns[]?' "${CONFIG_FILE}")
         fi
-        
+
         if jq -e '.exclude_patterns' "${CONFIG_FILE}" &> /dev/null; then
             while IFS= read -r pattern; do
                 EXCLUDE_PATTERNS+=("$pattern")
@@ -195,7 +206,7 @@ should_exclude_file() {
     local file="$1"
     # Remove leading ./ for consistent matching
     file="${file#./}"
-    
+
     for pattern in "${EXCLUDE_PATTERNS[@]}"; do
         # Use bash pattern matching for globs
         if [[ "$file" == $pattern ]]; then
@@ -216,7 +227,7 @@ if [[ "$INCLUDE_TERRAFORM" == "true" ]]; then
     done < <(find . -name "*.tf" -type f -not -path "./.terraform/*" -not -path "./.*" -print0 | sort -z)
 fi
 
-# Find Python files (.py) 
+# Find Python files (.py)
 if [[ "$INCLUDE_PYTHON" == "true" ]]; then
     [[ "$VERBOSE" == "true" ]] && echo "   Looking for Python files (.py)..."
     while IFS= read -r -d '' file; do
@@ -302,18 +313,18 @@ processed_files=0
 
 for file in "${files_to_check[@]}"; do
     total_files=$((total_files + 1))
-    
+
     if [[ -f "$file" ]]; then
         echo "   Processing ${file}..."
         hash=$(sha256sum "$file" | awk '{print $1}')
-        
+
         # Add comma if not first entry
         if [[ $first == true ]]; then
             first=false
         else
             echo "," >> "${temp_json}"
         fi
-        
+
         # Add entry to JSON
         echo -n "  \"${file}\": \"${hash}\"" >> "${temp_json}"
         processed_files=$((processed_files + 1))
@@ -339,30 +350,82 @@ echo "   Checksums file: ${OUTFILE}"
 echo ""
 echo "🔐 Step 2: Generating cryptographic signature..."
 
-# Check if private key exists
-if [[ ! -f "${PRIVATE_KEY}" ]]; then
-    echo "❌ Error: Private key not found at ${PRIVATE_KEY}"
-    echo ""
-    echo "To generate a key pair, run:"
-    echo "   # Generate private key"
-    echo "   openssl genrsa -out ${PRIVATE_KEY} 2048"
-    echo ""
-    echo "   # Generate public key"
-    echo "   openssl rsa -in ${PRIVATE_KEY} -pubout -out ${SCRIPT_DIR}/public_key.pem"
-    echo ""
-    echo "   # Secure the private key"
-    echo "   chmod 600 ${PRIVATE_KEY}"
-    exit 1
+# Determine private key source
+PRIVATE_KEY_CONTENT=""
+PRIVATE_KEY_SOURCE=""
+
+# Check for environment variable (priority order: custom env var, SCALR_PRIVATE_KEY, PRIVATE_KEY)
+if [[ -n "${PRIVATE_KEY_ENV}" ]]; then
+    if [[ -n "${!PRIVATE_KEY_ENV}" ]]; then
+        PRIVATE_KEY_CONTENT="${!PRIVATE_KEY_ENV}"
+        PRIVATE_KEY_SOURCE="environment variable ${PRIVATE_KEY_ENV}"
+    else
+        echo "❌ Error: Environment variable ${PRIVATE_KEY_ENV} is not set or empty"
+        exit 1
+    fi
+elif [[ -n "${SCALR_PRIVATE_KEY:-}" ]]; then
+    PRIVATE_KEY_CONTENT="${SCALR_PRIVATE_KEY}"
+    PRIVATE_KEY_SOURCE="environment variable SCALR_PRIVATE_KEY"
+elif [[ -n "${PRIVATE_KEY:-}" && "${PRIVATE_KEY}" != "${SCRIPT_DIR}/private_key.pem" ]]; then
+    # Only use PRIVATE_KEY env var if it's different from our default file path
+    PRIVATE_KEY_CONTENT="${PRIVATE_KEY}"
+    PRIVATE_KEY_SOURCE="environment variable PRIVATE_KEY"
 fi
 
-# Sign the checksums file
-if openssl dgst -sha256 -sign "${PRIVATE_KEY}" \
-                -out "${SIGFILE}" "${OUTFILE}"; then
-    echo "✅ Signature generated successfully"
-    echo "   Signature file: ${SIGFILE}"
+if [[ -n "${PRIVATE_KEY_CONTENT}" ]]; then
+    # Use private key from environment variable
+    echo "🔑 Using private key from ${PRIVATE_KEY_SOURCE}"
+
+    # Create temporary file for the key
+    TEMP_KEY=$(mktemp)
+    echo "${PRIVATE_KEY_CONTENT}" > "${TEMP_KEY}"
+    chmod 600 "${TEMP_KEY}"
+
+    # Sign the checksums file
+    if openssl dgst -sha256 -sign "${TEMP_KEY}" \
+                    -out "${SIGFILE}" "${OUTFILE}"; then
+        echo "✅ Signature generated successfully"
+        echo "   Signature file: ${SIGFILE}"
+    else
+        echo "❌ Failed to generate signature"
+        rm -f "${TEMP_KEY}"
+        exit 1
+    fi
+
+    # Clean up temporary key file
+    rm -f "${TEMP_KEY}"
 else
-    echo "❌ Failed to generate signature"
-    exit 1
+    # Use private key from file (original behavior)
+    if [[ ! -f "${PRIVATE_KEY}" ]]; then
+        echo "❌ Error: Private key not found at ${PRIVATE_KEY}"
+        echo ""
+        echo "Options to provide a private key:"
+        echo "   1. Generate a key pair:"
+        echo "      openssl genrsa -out ${PRIVATE_KEY} 2048"
+        echo "      openssl rsa -in ${PRIVATE_KEY} -pubout -out ${SCRIPT_DIR}/public_key.pem"
+        echo "      chmod 600 ${PRIVATE_KEY}"
+        echo ""
+        echo "   2. Use an environment variable:"
+        echo "      export SCALR_PRIVATE_KEY=\"\$(cat your-private-key.pem)\""
+        echo "      $0"
+        echo ""
+        echo "   3. Specify a custom environment variable:"
+        echo "      export MY_PRIVATE_KEY=\"\$(cat your-private-key.pem)\""
+        echo "      $0 --key-env MY_PRIVATE_KEY"
+        exit 1
+    fi
+
+    echo "🔑 Using private key from file: ${PRIVATE_KEY}"
+
+    # Sign the checksums file
+    if openssl dgst -sha256 -sign "${PRIVATE_KEY}" \
+                    -out "${SIGFILE}" "${OUTFILE}"; then
+        echo "✅ Signature generated successfully"
+        echo "   Signature file: ${SIGFILE}"
+    else
+        echo "❌ Failed to generate signature"
+        exit 1
+    fi
 fi
 
 echo ""
@@ -373,4 +436,4 @@ echo "   📄 ${OUTFILE}"
 echo "   🔐 ${SIGFILE}"
 echo ""
 echo "To verify the checksums, run:"
-echo "   ./scripts/validate_checksums.sh" 
+echo "   ./scripts/validate_checksums.sh"

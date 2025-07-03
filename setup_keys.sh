@@ -67,4 +67,4 @@ echo "   • Consider storing the private key in a secure vault for production u
 echo ""
 echo "Next steps:"
 echo "   1. Generate checksums: ./scripts/generate_checksums.sh"
-echo "   2. Validate checksums: ./scripts/validate_checksums.sh" 
+echo "   2. Validate checksums: ./scripts/validate_checksums.sh"
