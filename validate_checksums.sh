@@ -1,6 +1,14 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Verifies the signature on checksums.json with public_key.pem.
 # If that passes, it also re-computes each file's hash and compares.
+
+# Check if we're running with bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "❌ Error: This script requires bash, but it's being run with: $0"
+    echo "   Please run with: bash $0 or ./$0"
+    exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
