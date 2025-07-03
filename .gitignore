@@ -1,0 +1,6 @@
+# Signature validation files
+scripts/private_key.pem
+scripts/checksum_config.json
+*.tmp
+*.log
+.DS_Store

@@ -1,0 +1,24 @@
+{
+  "include_terraform": true,
+  "include_python": true,
+  "include_config": true,
+  "include_scripts": true,
+  "include_docs": true,
+  "include_patterns": [
+    "*.md",
+    "*.txt",
+    "Dockerfile*",
+    ".gitignore",
+    ".gitattributes"
+  ],
+  "exclude_patterns": [
+    "test*",
+    "*.tmp",
+    "*.log",
+    "*~",
+    ".DS_Store",
+    "node_modules/*",
+    ".terraform/*",
+    "*.backup"
+  ]
+} 
