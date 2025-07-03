@@ -12,11 +12,10 @@ fi
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-OUTFILE="${WORKSPACE_ROOT}/checksums.json"
+OUTFILE="${PWD}/checksums.json"
 SIGFILE="${OUTFILE}.sig"
-PUBLIC_KEY="${SCRIPT_DIR}/public_key.pem"
+PUBLIC_KEY="${SCALR_HOOK_DIR}/public_key.pem"
 PUBLIC_KEY_ENV=""
 
 # Function to show usage
