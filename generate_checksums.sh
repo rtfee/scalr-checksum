@@ -1,12 +1,19 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Generates checksums.json for all relevant files and signs it with private key
+
+# Check if we're running with bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "❌ Error: This script requires bash, but it's being run with: $0"
+    echo "   Please run with: bash $0 or ./$0"
+    exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Default configuration
-OUTFILE="${WORKSPACE_ROOT}/checksums.json"
+OUTFILE="${PWD}/checksums.json"
 SIGFILE="${OUTFILE}.sig"
 PRIVATE_KEY="${SCRIPT_DIR}/private_key.pem"
 PRIVATE_KEY_ENV=""
@@ -164,7 +171,7 @@ if [[ -f "${CONFIG_FILE}" ]]; then
 fi
 
 echo "🔧 Generating checksums for Scalr EventBridge integration..."
-echo "📁 Workspace: ${WORKSPACE_ROOT}"
+echo "📁 Workspace: ${PWD}"
 echo "📄 Output: ${OUTFILE}"
 
 if [[ "$VERBOSE" == "true" ]]; then
@@ -185,8 +192,6 @@ if ! command -v jq &> /dev/null; then
     echo "   Install with: brew install jq (macOS) or apt-get install jq (Ubuntu)"
     exit 1
 fi
-
-cd "${WORKSPACE_ROOT}"
 
 echo ""
 echo "📋 Step 1: Generating file checksums..."
@@ -287,7 +292,11 @@ if [[ ${#INCLUDE_PATTERNS[@]} -gt 0 ]]; then
 fi
 
 # Remove duplicates and sort
-readarray -t files_to_check < <(printf '%s\n' "${files_to_check[@]}" | sort -u)
+files_to_check_unique=()
+while IFS= read -r file; do
+    files_to_check_unique+=("$file")
+done < <(printf '%s\n' "${files_to_check[@]}" | sort -u)
+files_to_check=("${files_to_check_unique[@]}")
 
 # Convert to relative paths (remove leading ./)
 for i in "${!files_to_check[@]}"; do
@@ -436,4 +445,4 @@ echo "   📄 ${OUTFILE}"
 echo "   🔐 ${SIGFILE}"
 echo ""
 echo "To verify the checksums, run:"
-echo "   ./scripts/validate_checksums.sh"
+echo "   ./validate_checksums.sh"
