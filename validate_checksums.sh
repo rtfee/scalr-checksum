@@ -71,7 +71,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "🔍 Starting signature validation for Scalr EventBridge integration..."
-echo "📁 Workspace: ${WORKSPACE_ROOT}"
+echo "📁 Workspace: ${PWD}"
 echo "📄 Checksums file: ${OUTFILE}"
 
 # Check if required files exist
@@ -168,8 +168,6 @@ echo "🔍 Step 2: File integrity verification..."
 fail=0
 total_files=0
 verified_files=0
-
-cd "${WORKSPACE_ROOT}"
 
 while IFS=$'\t' read -r file hash; do
     total_files=$((total_files + 1))
